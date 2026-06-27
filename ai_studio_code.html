@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地域別・歴代気象極値検索ツール</title>
+    <style>
+        body {
+            font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+            background-color: #f4f7f9;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        h1 {
+            font-size: 22px;
+            text-align: center;
+            margin-bottom: 25px;
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .selection-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 12px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #555;
+        }
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            background-color: #fff;
+        }
+        button {
+            width: 100%;
+            padding: 16px;
+            background-color: #3498db;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 17px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        .api-status {
+            font-size: 14px;
+            color: #3498db;
+            margin: 15px 0;
+            min-height: 20px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        /* セクションタイトル */
+        .section-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin: 25px 0 10px;
+            padding-left: 10px;
+            border-left: 5px solid #3498db;
+            color: #2c3e50;
+        }
+        .section-title.rain { border-left-color: #2980b9; }
+
+        /* 結果表示カード */
+        .results-area { display: none; }
+        .cards-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .card {
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .card.hot { border-top: 5px solid #e74c3c; }
+        .card.cold { border-top: 5px solid #3498db; }
+        .card.rain-d { border-top: 5px solid #5d6d7e; }
+        .card.rain-h { border-top: 5px solid #2e86c1; }
+
+        .card-label { font-size: 12px; color: #777; margin-bottom: 5px; }
+        .val-num { font-size: 30px; font-weight: bold; }
+        .val-unit { font-size: 14px; margin-left: 3px; color: #555; }
+        .val-date { font-size: 12px; margin-top: 8px; color: #888; font-weight: bold; }
+
+        /* スピナー */
+        .spinner {
+            display: inline-block;
+            width: 16px; height: 16px;
+            border: 3px solid rgba(52,152,219,.2);
+            border-radius: 50%;
+            border-top-color: #3498db;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 500px) {
+            .selection-group, .cards-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>地域別・歴代気象極値検索</h1>
+
+    <div class="selection-group">
+        <div>
+            <label>都道府県</label>
+            <select id="prefSelect" onchange="updateCities()">
+                <option value="">-- 選択 --</option>
+            </select>
+        </div>
+        <div>
+            <label>詳細地域</label>
+            <select id="citySelect" disabled>
+                <option value="">-- 先に都道府県を --</option>
+            </select>
+        </div>
+    </div>
+
+    <button id="searchBtn" onclick="runAnalysis()">この地域の記録を解析する</button>
+
+    <div class="api-status" id="statusMsg"></div>
+
+    <div class="results-area" id="resultsArea">
+        <!-- 気温セクション -->
+        <div class="section-title">歴代気温（最高・最低）</div>
+        <div class="cards-grid">
+            <div class="card hot">
+                <div class="card-label">歴代最高気温</div>
+                <div><span class="val-num" id="resMaxTemp">-</span><span class="val-unit">°C</span></div>
+                <div class="val-date" id="resMaxTempDate">-</div>
+            </div>
+            <div class="card cold">
+                <div class="card-label">歴代最低気温</div>
+                <div><span class="val-num" id="resMinTemp">-</span><span class="val-unit">°C</span></div>
+                <div class="val-date" id="resMinTempDate">-</div>
+            </div>
+        </div>
+
+        <!-- 降雨量セクション -->
+        <div class="section-title rain">歴代降雨量（日次・時間次）</div>
+        <div class="cards-grid">
+            <div class="card rain-d">
+                <div class="card-label">1日の最大降水量</div>
+                <div><span class="val-num" id="resMaxRainD">-</span><span class="val-unit">mm/d</span></div>
+                <div class="val-date" id="resMaxRainDDate">-</div>
+            </div>
+            <div class="card rain-h">
+                <div class="card-label">1時間の最大降水量</div>
+                <div><span class="val-num" id="resMaxRainH">-</span><span class="val-unit">mm/h</span></div>
+                <div class="val-date" id="resMaxRainHDate">-</div>
+            </div>
+        </div>
+    </div>
+
+    <div style="font-size: 11px; color: #999; margin-top: 30px; line-height: 1.5; text-align: center;">
+        データ出典: Open-Meteo Archive (ERA5 再解析データ)<br>
+        対象期間: 1980年1月1日 〜 2023年12月31日<br>
+        ※再解析データのため、実際の観測所の記録とわずかに異なる場合があります。
+    </div>
+</div>
+
+<script>
+// 地域データ
+const regionData = {
+    "北海道": [{name: "札幌", lat: 43.06, lon: 141.35}, {name: "函館", lat: 41.77, lon: 140.73}, {name: "旭川", lat: 43.77, lon: 142.36}, {name: "釧路", lat: 42.98, lon: 144.38}, {name: "稚内", lat: 45.41, lon: 141.67}],
+    "青森県": [{name: "青森", lat: 40.82, lon: 140.74}, {name: "八戸", lat: 40.51, lon: 141.49}],
+    "岩手県": [{name: "盛岡", lat: 39.70, lon: 141.15}, {name: "釜石", lat: 39.27, lon: 141.88}],
+    "宮城県": [{name: "仙台", lat: 38.27, lon: 140.87}, {name: "石巻", lat: 38.43, lon: 141.30}],
+    "秋田県": [{name: "秋田", lat: 39.72, lon: 140.10}],
+    "山形県": [{name: "山形", lat: 38.26, lon: 140.34}, {name: "酒田", lat: 38.91, lon: 139.84}],
+    "福島県": [{name: "福島", lat: 37.75, lon: 140.47}, {name: "いわき", lat: 37.05, lon: 140.89}],
+    "茨城県": [{name: "水戸", lat: 36.34, lon: 140.45}, {name: "つくば", lat: 36.08, lon: 140.11}],
+    "栃木県": [{name: "宇都宮", lat: 36.57, lon: 139.88}, {name: "日光", lat: 36.75, lon: 139.61}],
+    "群馬県": [{name: "前橋", lat: 36.39, lon: 139.06}, {name: "館林", lat: 36.24, lon: 139.53}],
+    "埼玉県": [{name: "さいたま", lat: 35.86, lon: 139.65}, {name: "熊谷", lat: 36.15, lon: 139.39}],
+    "千葉県": [{name: "千葉", lat: 35.61, lon: 140.12}, {name: "銚子", lat: 35.73, lon: 140.83}, {name: "館山", lat: 34.99, lon: 139.86}],
+    "東京都": [{name: "東京(千代田)", lat: 35.69, lon: 139.75}, {name: "八王子", lat: 35.66, lon: 139.33}, {name: "奥多摩", lat: 35.81, lon: 139.10}, {name: "父島", lat: 27.09, lon: 142.19}],
+    "神奈川県": [{name: "横浜", lat: 35.45, lon: 139.64}, {name: "小田原", lat: 35.25, lon: 139.15}],
+    "新潟県": [{name: "新潟", lat: 37.90, lon: 139.02}, {name: "長岡", lat: 37.45, lon: 138.85}],
+    "富山県": [{name: "富山", lat: 36.70, lon: 137.21}],
+    "石川県": [{name: "金沢", lat: 36.59, lon: 136.63}],
+    "福井県": [{name: "福井", lat: 36.07, lon: 136.22}],
+    "山梨県": [{name: "甲府", lat: 35.66, lon: 138.57}, {name: "大月", lat: 35.61, lon: 138.94}],
+    "長野県": [{name: "長野", lat: 36.65, lon: 138.18}, {name: "松本", lat: 36.23, lon: 137.97}],
+    "岐阜県": [{name: "岐阜", lat: 35.42, lon: 136.76}, {name: "多治見", lat: 35.33, lon: 137.13}],
+    "静岡県": [{name: "静岡", lat: 34.98, lon: 138.38}, {name: "浜松", lat: 34.71, lon: 137.73}],
+    "愛知県": [{name: "名古屋", lat: 35.18, lon: 136.91}, {name: "豊田", lat: 35.08, lon: 137.15}],
+    "三重県": [{name: "津", lat: 34.73, lon: 136.51}, {name: "尾鷲", lat: 34.07, lon: 136.19}],
+    "滋賀県": [{name: "大津", lat: 35.00, lon: 135.87}],
+    "京都府": [{name: "京都", lat: 35.01, lon: 135.76}, {name: "舞鶴", lat: 35.45, lon: 135.33}],
+    "大阪府": [{name: "大阪", lat: 34.69, lon: 135.50}, {name: "枚方", lat: 34.81, lon: 135.65}],
+    "兵庫県": [{name: "神戸", lat: 34.69, lon: 135.19}, {name: "豊岡", lat: 35.54, lon: 134.82}],
+    "奈良県": [{name: "奈良", lat: 34.69, lon: 135.83}],
+    "和歌山県": [{name: "和歌山", lat: 34.23, lon: 135.17}, {name: "新宮", lat: 33.72, lon: 135.99}],
+    "鳥取県": [{name: "鳥取", lat: 35.50, lon: 134.24}],
+    "島根県": [{name: "松江", lat: 35.47, lon: 133.05}, {name: "浜田", lat: 34.90, lon: 132.09}],
+    "岡山県": [{name: "岡山", lat: 34.66, lon: 133.93}],
+    "広島県": [{name: "広島", lat: 34.40, lon: 132.46}, {name: "呉", lat: 34.25, lon: 132.56}],
+    "山口県": [{name: "山口", lat: 34.18, lon: 131.47}, {name: "下関", lat: 33.96, lon: 130.94}],
+    "徳島県": [{name: "徳島", lat: 34.07, lon: 134.56}],
+    "香川県": [{name: "高松", lat: 34.34, lon: 134.04}],
+    "愛媛県": [{name: "松山", lat: 33.84, lon: 132.77}],
+    "高知県": [{name: "高知", lat: 33.56, lon: 133.53}, {name: "四万十", lat: 32.99, lon: 132.93}],
+    "福岡県": [{name: "福岡", lat: 33.61, lon: 130.42}, {name: "北九州", lat: 33.88, lon: 130.88}],
+    "佐賀県": [{name: "佐賀", lat: 33.25, lon: 130.30}],
+    "長崎県": [{name: "長崎", lat: 32.75, lon: 129.87}, {name: "佐世保", lat: 33.18, lon: 129.72}],
+    "熊本県": [{name: "熊本", lat: 32.79, lon: 130.74}, {name: "阿蘇", lat: 32.94, lon: 131.12}],
+    "大分県": [{name: "大分", lat: 33.24, lon: 131.61}],
+    "宮崎県": [{name: "宮崎", lat: 31.91, lon: 131.42}, {name: "延岡", lat: 32.58, lon: 131.66}],
+    "鹿児島県": [{name: "鹿児島", lat: 31.56, lon: 130.56}, {name: "奄美", lat: 28.38, lon: 129.49}],
+    "沖縄県": [{name: "那覇", lat: 26.21, lon: 127.68}, {name: "石垣", lat: 24.34, lon: 124.16}, {name: "宮古島", lat: 24.80, lon: 125.28}]
+};
+
+const prefSelect = document.getElementById('prefSelect');
+const citySelect = document.getElementById('citySelect');
+
+Object.keys(regionData).forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    prefSelect.appendChild(opt);
+});
+
+function updateCities() {
+    const p = prefSelect.value;
+    citySelect.innerHTML = '<option value="">-- 選択 --</option>';
+    if(p) {
+        citySelect.disabled = false;
+        regionData[p].forEach((c, i) => {
+            const opt = document.createElement('option');
+            opt.value = i; opt.textContent = c.name;
+            citySelect.appendChild(opt);
+        });
+    } else { citySelect.disabled = true; }
+}
+
+async function runAnalysis() {
+    const p = prefSelect.value;
+    const cIdx = citySelect.value;
+    const status = document.getElementById('statusMsg');
+    const searchBtn = document.getElementById('searchBtn');
+    const resultsArea = document.getElementById('resultsArea');
+
+    if(!p || cIdx === "") return alert("地域を選択してください。");
+
+    const city = regionData[p][cIdx];
+    status.innerHTML = `<span class="spinner"></span> ${city.name}の歴代データを解析中...`;
+    searchBtn.disabled = true;
+    resultsArea.style.display = "none";
+
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${city.lat}&longitude=${city.lon}&start_date=1980-01-01&end_date=2023-12-31&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&hourly=precipitation&timezone=Asia%2FTokyo`;
+
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+
+        // 1. 気温の解析
+        let maxT = -99, maxTDate = "";
+        let minT = 99, minTDate = "";
+        data.daily.temperature_2m_max.forEach((v, i) => {
+            if(v > maxT) { maxT = v; maxTDate = data.daily.time[i]; }
+        });
+        data.daily.temperature_2m_min.forEach((v, i) => {
+            if(v < minT) { minT = v; minTDate = data.daily.time[i]; }
+        });
+
+        // 2. 降水量の解析
+        let maxRD = 0, dateRD = "";
+        data.daily.precipitation_sum.forEach((v, i) => {
+            if(v > maxRD) { maxRD = v; dateRD = data.daily.time[i]; }
+        });
+        let maxRH = 0, dateRH = "";
+        data.hourly.precipitation.forEach((v, i) => {
+            if(v > maxRH) { maxRH = v; dateRH = data.hourly.time[i]; }
+        });
+
+        // 表示
+        document.getElementById('resMaxTemp').innerText = maxT.toFixed(1);
+        document.getElementById('resMaxTempDate').innerText = formatD(maxTDate);
+        document.getElementById('resMinTemp').innerText = minT.toFixed(1);
+        document.getElementById('resMinTempDate').innerText = formatD(minTDate);
+        
+        document.getElementById('resMaxRainD').innerText = maxRD.toFixed(1);
+        document.getElementById('resMaxRainDDate').innerText = formatD(dateRD);
+        document.getElementById('resMaxRainH').innerText = maxRH.toFixed(1);
+        document.getElementById('resMaxRainHDate').innerText = formatD(dateRH, true);
+
+        status.innerText = `解析完了: ${city.name}`;
+        resultsArea.style.display = "block";
+    } catch (e) {
+        status.innerText = "データ取得エラー";
+    } finally { searchBtn.disabled = false; }
+}
+
+function formatD(s, showH) {
+    const d = new Date(s);
+    let r = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+    if(showH) r += ` ${d.getHours()}:00頃`;
+    return r;
+}
+</script>
+
+</body>
+</html>
